@@ -120,8 +120,37 @@ object Broadlink {
         -2 -> "sesión cerrada"
         -3 -> "el equipo está desconectado"
         -4 -> "comando no soportado"
+        -5 -> "el equipo rechazó la conexión (¿está bloqueado por AC Freedom?)"
         ERROR_KEY_EXPIRED -> "la clave de control expiró"
         else -> "error $code del equipo"
+    }
+
+    /** Seguridad del Wi-Fi para [setupPacket], con los códigos de Broadlink. */
+    enum class WifiSecurity(val code: Int, val label: String) {
+        NONE(0, "Sin clave"), WEP(1, "WEP"), WPA(2, "WPA"), WPA2(3, "WPA2"), WPA_WPA2(4, "WPA/WPA2"),
+    }
+
+    const val MAX_SSID = 32
+    const val MAX_PASSWORD = 32
+
+    /**
+     * Paquete que configura el Wi-Fi de un equipo en modo AP (cuando crea su propia red). El equipo se reinicia,
+     * se conecta a la red indicada y queda sin bloqueo, porque no pasa por la nube.
+     */
+    fun setupPacket(ssid: String, password: String, security: WifiSecurity): ByteArray {
+        val s = ssid.toByteArray(Charsets.UTF_8)
+        val pw = password.toByteArray(Charsets.UTF_8)
+        if (s.isEmpty() || s.size > MAX_SSID) throw BroadlinkException("el nombre del Wi-Fi debe tener entre 1 y $MAX_SSID caracteres")
+        if (pw.size > MAX_PASSWORD) throw BroadlinkException("la clave del Wi-Fi puede tener hasta $MAX_PASSWORD caracteres")
+        val p = ByteArray(0x88)
+        p[0x26] = 0x14
+        s.copyInto(p, 0x44)
+        pw.copyInto(p, 0x64)
+        p[0x84] = s.size.toByte()
+        p[0x85] = pw.size.toByte()
+        p[0x86] = security.code.toByte()
+        putLe16(p, 0x20, checksum(p))
+        return p
     }
 
     fun authPayload(): ByteArray {

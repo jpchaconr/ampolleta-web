@@ -41,7 +41,9 @@ Los aires Kendal (fabricados por AUX) con Wi-Fi usan un módulo Broadlink que se
 Android los controla directo por la red local (UDP, puerto 80), sin la nube, con el protocolo de
 [python-broadlink](https://github.com/mjg59/python-broadlink): encendido, temperatura, modo, ventilador, aleta, dormir,
 turbo y pantalla, y muestra la temperatura ambiente.
-- Primero conecta el aire a tu Wi-Fi con AC Freedom. El teléfono tiene que estar en esa misma red.
+- Para conectar el aire a tu Wi-Fi sin AC Freedom: "Agregar" → "Aire acondicionado" → "Configurar Wi-Fi de un aire".
+  Con el aire en modo vinculación (8 veces "Health" en el control), conéctate a la red que crea y envíale tu Wi-Fi de
+  casa (2,4 GHz). Así queda sin el bloqueo que pone AC Freedom, que hace que el aire rechace la conexión (error -5).
+- El teléfono tiene que estar en el mismo Wi-Fi que el aire.
 - En la app: "Agregar" → "Aire acondicionado"; la app lo busca en la red. Si el router le cambia la IP, lo vuelve a buscar solo.
-- Si el aire no acepta la conexión, revisa que no esté bloqueado ("lock") en AC Freedom.
 - El navegador no puede mandar paquetes UDP, por eso esto está solo en la app Android.

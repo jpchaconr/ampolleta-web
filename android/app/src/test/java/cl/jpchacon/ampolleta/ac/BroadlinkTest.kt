@@ -129,6 +129,23 @@ class BroadlinkTest {
     }
 
     @Test
+    fun configuracionWifiComoPythonBroadlink() {
+        assertEquals(
+            "0000000000000000000000000000000000000000000000000000000000000000f4c60000000014000000000000000000000000000000000000000000" +
+                "00000000000000004d69436173615f32470000000000000000000000000000000000000000000000636c617665207365637265746100000000000000000000000000000000000000090d0300",
+            Broadlink.setupPacket("MiCasa_2G", "clave secreta", Broadlink.WifiSecurity.WPA2).toHex(),
+        )
+        for ((ssid, pw) in listOf("" to "x", "x".repeat(33) to "x", "casa" to "y".repeat(33))) {
+            try {
+                Broadlink.setupPacket(ssid, pw, Broadlink.WifiSecurity.WPA2)
+                fail("debió rechazar $ssid / $pw")
+            } catch (e: BroadlinkException) {
+                // Bien: no cabe en el paquete.
+            }
+        }
+    }
+
+    @Test
     fun leeEstadoComoPythonBroadlink() {
         val s = Hvac.parseState(Hvac.responseData(hex("1900bb00068000000f00110177e48d40006400002000100005a489")))
         assertEquals(AcState(power = true, targetTemp = 22.0, mode = AcMode.HEAT, speed = FanSpeed.MID, sleep = true, display = true), s)

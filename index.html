@@ -63,12 +63,6 @@
   .chip { padding: 8px 12px; border-radius: 999px; font-size: 14px; display: flex; align-items: center; gap: 8px; }
   .chip.on { background: var(--accent); border-color: var(--accent); color: var(--accent-text); }
   .chip .dot { width: 10px; height: 10px; border-radius: 50%; background: #666; }
-  .temp-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
-  .temp-row button { width: 56px; height: 56px; font-size: 26px; padding: 0; border-radius: 50%; }
-  .temp-big { font-size: 44px; font-weight: 700; text-align: center; font-variant-numeric: tabular-nums; }
-  .temp-now { text-align: center; font-size: 14px; color: var(--muted); }
-  .seg.wrap { flex-wrap: wrap; }
-  .seg.wrap button { min-width: 33%; }
 </style>
 </head>
 <body>
@@ -76,7 +70,7 @@
   <h1><span class="bulb" id="bulb"></span> Mi Ampolleta</h1>
 
   <section class="card" id="setup">
-    <h2>Tus ampolletas y aires</h2>
+    <h2>Tus ampolletas</h2>
     <label class="file">Cargar devices.json<input type="file" id="fileInput" accept=".json,application/json"></label>
     <details style="margin-top:10px">
       <summary>o pega su contenido</summary>
@@ -85,7 +79,7 @@
     </details>
     <ul class="bulbs" id="bulbList"></ul>
     <p class="hint">Las claves se guardan solo en este navegador. Cierra Smart Life antes de conectar.</p>
-    <button class="primary" id="connectBtn" style="width:100%;margin-top:12px" disabled>Conectar dispositivo</button>
+    <button class="primary" id="connectBtn" style="width:100%;margin-top:12px" disabled>Conectar ampolleta</button>
     <div class="status" id="status"></div>
   </section>
 
@@ -100,22 +94,7 @@
       <button class="power primary" id="powerBtn">Encender</button>
     </div>
 
-    <div class="card" id="acBox">
-      <div class="temp-row">
-        <button id="acDown" aria-label="Bajar temperatura">−</button>
-        <div>
-          <div class="temp-big" id="acTemp">24°</div>
-          <div class="temp-now" id="acNow"></div>
-        </div>
-        <button id="acUp" aria-label="Subir temperatura">+</button>
-      </div>
-      <h2 style="margin-top:16px">Modo</h2>
-      <div class="seg wrap" id="acModes"></div>
-      <h2 style="margin-top:16px">Ventilador</h2>
-      <div class="seg wrap" id="acFans"></div>
-    </div>
-
-    <div class="card" id="lightBox">
+    <div class="card">
       <h2>Modo</h2>
       <div class="seg">
         <button id="modeWhite">Blanco</button>
@@ -164,11 +143,9 @@
 </main>
 
 <script src="tuya-ble.js"></script>
-<script src="aire.js"></script>
 <script>
 (() => {
   const { TuyaBLEDevice, DT, DT_NAMES } = window.TuyaBLE;
-  const Aire = window.Aire;
   const $ = (id) => document.getElementById(id);
 
   // ---------- almacenamiento local ----------
@@ -229,23 +206,19 @@
     if (!Array.isArray(list)) list = [list];
     list = list.filter((d) => d && d.id && d.key && d.uuid).map((d) => ({
       id: String(d.id), key: String(d.key), uuid: String(d.uuid),
-      name: String(d.name || d.id), mapping: d.mapping || null, category: d.category || null,
+      name: String(d.name || d.id), mapping: d.mapping || null,
     }));
-    if (!list.length) { setStatus('No encontré dispositivos con id, key y uuid.', true); return; }
+    if (!list.length) { setStatus('No encontré ampolletas con id, key y uuid.', true); return; }
     creds = list;
     if (persist) store.set('devices', JSON.stringify(list));
     renderCreds();
-    const acs = list.filter((d) => Aire.isAirConditioner(d)).length, lights = list.length - acs;
-    const parts = [];
-    if (lights) parts.push(`${lights} ampolleta${lights > 1 ? 's' : ''}`);
-    if (acs) parts.push(`${acs} aire${acs > 1 ? 's' : ''}`);
-    setStatus(`Cargado: ${parts.join(' y ')}.`);
+    setStatus(`${list.length} ampolleta${list.length > 1 ? 's' : ''} cargada${list.length > 1 ? 's' : ''}.`);
   }
   function renderCreds() {
     $('bulbList').innerHTML = '';
     for (const c of creds) {
       const li = document.createElement('li');
-      const a = document.createElement('span'); a.textContent = (Aire.isAirConditioner(c) ? '❄ ' : '') + c.name;
+      const a = document.createElement('span'); a.textContent = c.name;
       const b = document.createElement('span'); b.textContent = bulbs.some((x) => x.cred.id === c.id) ? 'conectada' : c.uuid;
       li.append(a, b);
       $('bulbList').appendChild(li);
@@ -304,15 +277,11 @@
   }
 
   // ---------- ampolletas conectadas ----------
-  // Cada una: { dev, cred, ac, profile, types: Map(dp → tipo reportado), state, selected, sending, queued }
-  // ac es true para los aires: tienen su propio perfil (ver aire.js) y su propio panel.
-  // Se controlan juntos solo dispositivos del mismo tipo.
+  // Cada una: { dev, cred, profile, types: Map(dp → tipo reportado), state, selected, sending, queued }
   const bulbs = [];
   const newState = () => ({ on: false, mode: 'white', bright: 100, temp: 50, h: 30, s: 100 });
   const selected = () => bulbs.filter((b) => b.selected);
-  const currentDevice = () => selected()[0] || bulbs[0] || { ac: false, state: newState() };
-  const current = () => currentDevice().state;
-  const selectedOfKind = (ac) => selected().filter((b) => b.ac === ac);
+  const current = () => (selected()[0] || bulbs[0] || { state: newState() }).state;
 
   function dpsFor(bulb, keys) {
     const p = bulb.profile, st = bulb.state, out = [];
@@ -343,55 +312,18 @@
 
   // Aplica un cambio de estado a todas las seleccionadas y envía los DP indicados.
   function apply(change, keys) {
-    for (const b of selectedOfKind(false)) {
+    for (const b of selected()) {
       Object.assign(b.state, typeof change === 'function' ? change(b.state) : change);
       sendTo(b, dpsFor(b, typeof keys === 'function' ? keys(b.state) : keys));
     }
     render();
   }
 
-  function applyAc(change, keys) {
-    for (const b of selectedOfKind(true)) {
-      Object.assign(b.state, typeof change === 'function' ? change(b.state, b.profile) : change);
-      sendTo(b, Aire.dpsFor(b.profile, b.state, keys));
-    }
-    render();
-  }
-
   // ---------- UI ----------
-  function segButtons(box, values, currentValue, onPick) {
-    box.innerHTML = '';
-    for (const v of values) {
-      const b = document.createElement('button');
-      b.textContent = Aire.label(v);
-      b.classList.toggle('on', v === currentValue);
-      b.onclick = () => onPick(v);
-      box.appendChild(b);
-    }
-  }
-
-  function glowOf(d) {
-    const s = d.state;
-    if (!s.on) return '#555';
-    if (d.ac) return ['hot', 'heat'].includes(s.mode) ? '#ff7a33' : ['wind', 'fan'].includes(s.mode) ? '#9aa4b0' : '#3fa9f5';
-    return s.mode === 'colour' ? hsvToHex(s.h, s.s, 100) : hsvToHex(35 - s.temp * 0.15, 60 - s.temp * 0.55, 100);
-  }
-
-  function renderAc(d) {
-    const st = d.state, p = d.profile || Aire.DEFAULT_PROFILE;
-    $('acTemp').textContent = `${st.temp}°`;
-    $('acNow').textContent = st.current != null ? `Ahora hay ${st.current}°` : '';
-    segButtons($('acModes'), p.modes, st.mode, (mode) => applyAc({ mode, on: true }, ['power', 'mode']));
-    segButtons($('acFans'), p.fans, st.fan, (fan) => applyAc({ fan }, ['fan']));
-  }
-
   function render() {
-    const dev = currentDevice(), st = dev.state;
+    const st = current();
     $('powerBtn').textContent = st.on ? 'Apagar' : 'Encender';
     $('powerBtn').classList.toggle('primary', !st.on);
-    $('acBox').classList.toggle('hidden', !dev.ac);
-    $('lightBox').classList.toggle('hidden', !!dev.ac);
-    if (dev.ac) renderAc(dev);
     $('modeWhite').classList.toggle('on', st.mode === 'white');
     $('modeColour').classList.toggle('on', st.mode === 'colour');
     $('whiteBox').classList.toggle('hidden', st.mode !== 'white');
@@ -400,34 +332,23 @@
     $('temp').value = st.temp;
     $('colour').value = hsvToHex(st.h, st.s, 100);
 
-    const glow = glowOf(dev);
+    const glowOf = (s) => !s.on ? '#555' : s.mode === 'colour' ? hsvToHex(s.h, s.s, 100) : hsvToHex(35 - s.temp * 0.15, 60 - s.temp * 0.55, 100);
+    const glow = glowOf(st);
     $('bulb').style.background = glow;
-    $('bulb').style.boxShadow = st.on ? `0 0 ${dev.ac ? 14 : 6 + st.bright / 5}px ${glow}` : 'none';
+    $('bulb').style.boxShadow = st.on ? `0 0 ${6 + st.bright / 5}px ${glow}` : 'none';
 
     $('chips').innerHTML = '';
     for (const b of bulbs) {
       const c = document.createElement('button');
       c.className = 'chip' + (b.selected ? ' on' : '');
-      const dot = document.createElement('span'); dot.className = 'dot'; dot.style.background = glowOf(b);
-      c.append(dot, (b.ac ? '❄ ' : '') + b.cred.name);
-      c.onclick = () => {
-        b.selected = !b.selected;
-        if (b.selected) for (const o of bulbs) if (o.ac !== b.ac) o.selected = false;
-        if (!selected().length) b.selected = true;
-        render();
-      };
+      const dot = document.createElement('span'); dot.className = 'dot'; dot.style.background = glowOf(b.state);
+      c.append(dot, b.cred.name);
+      c.onclick = () => { b.selected = !b.selected; if (!selected().length) b.selected = true; render(); };
       $('chips').appendChild(c);
     }
   }
 
-  $('powerBtn').onclick = () => {
-    const on = !current().on;
-    if (currentDevice().ac) applyAc({ on }, ['power']);
-    else apply({ on }, ['power']);
-  };
-  const stepTemp = (dir) => applyAc((s, p) => ({ temp: Aire.clampTemp(p, s.temp + dir * p.tempStep) }), ['temp']);
-  $('acUp').onclick = () => stepTemp(1);
-  $('acDown').onclick = () => stepTemp(-1);
+  $('powerBtn').onclick = () => { const on = !current().on; apply({ on }, ['power']); };
   $('modeWhite').onclick = () => apply({ mode: 'white', on: true }, ['power', 'mode', 'bright', 'temp']);
   $('modeColour').onclick = () => apply({ mode: 'colour', on: true }, ['power', 'mode', 'colour']);
   $('bright').oninput = (e) => apply({ bright: +e.target.value }, (s) => (s.mode === 'colour' ? ['colour'] : ['bright']));
@@ -458,7 +379,6 @@
       bulb.types.set(dp.id, dp.type);
       const shown = dp.value instanceof Uint8Array ? window.TuyaBLE.toHex(dp.value) : JSON.stringify(dp.value);
       log(`${bulb.cred.name}: DP ${dp.id} (${DT_NAMES[dp.type]}) = ${shown}`);
-      if (bulb.ac) continue;
       if (dp.id === p.power) st.on = !!dp.value;
       else if (dp.id === p.mode) st.mode = dp.value === p.modeColour ? 'colour' : 'white';
       else if (dp.id === p.bright && typeof dp.value === 'number' && st.mode === 'white')
@@ -470,8 +390,7 @@
         if (c) { st.h = c.h; st.s = c.s; if (st.mode === 'colour') st.bright = Math.round(c.v); }
       }
     }
-    if (bulb.ac) Aire.applyDatapoints(p, st, dps);
-    else st.bright = Math.max(1, Math.min(100, st.bright));
+    st.bright = Math.max(1, Math.min(100, st.bright));
     render();
   }
 
@@ -490,7 +409,7 @@
       if (e.name !== 'NotFoundError') setStatus(e.message, true);
       return;
     }
-    if (bulbs.some((b) => b.dev.device === device)) { setStatus('Ese dispositivo ya está conectado.'); return; }
+    if (bulbs.some((b) => b.dev.device === device)) { setStatus('Esa ampolleta ya está conectada.'); return; }
 
     const remembered = store.get('map.' + device.id);
     const candidates = creds
@@ -503,9 +422,7 @@
         setStatus(`Probando con "${cred.name}"…`);
         log(`Probando credenciales de ${cred.name}`);
         const dev = new TuyaBLEDevice({ uuid: cred.uuid, localKey: cred.key, deviceId: cred.id, log: (m) => log(`${cred.name}: ${m}`) });
-        const ac = Aire.isAirConditioner(cred);
-        const profile = ac ? Aire.profileFromMapping(cred.mapping) : profileFromMapping(cred.mapping);
-        const bulb = { dev, cred, ac, profile, types: new Map(), state: ac ? Aire.newState(profile) : newState(), selected: true };
+        const bulb = { dev, cred, profile: profileFromMapping(cred.mapping), types: new Map(), state: newState(), selected: true };
         dev.onDatapoints = (dps) => onDatapoints(bulb, dps);
         try {
           await dev.connectTo(device);
@@ -520,14 +437,13 @@
           log(`${cred.name}: se perdió la conexión`);
           showScreen();
         };
-        for (const o of bulbs) if (o.ac !== ac) o.selected = false;
         bulbs.push(bulb);
-        setStatus(`Conectado: ${cred.name}`);
+        setStatus(`Conectada: ${cred.name}`);
         showScreen();
         return;
       }
       device.gatt.disconnect();
-      setStatus('Ninguna de las credenciales cargadas funcionó con ese dispositivo. ¿Smart Life / Tuya Smart está cerrada? Abre "Registro" abajo para ver el detalle.', true);
+      setStatus('Ninguna de las credenciales cargadas funcionó con esa ampolleta. ¿Smart Life está cerrada? Abre "Registro" abajo para ver el detalle.', true);
       $('logBox').open = true;
     } finally {
       $('connectBtn').disabled = !creds.length;

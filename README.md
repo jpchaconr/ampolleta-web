@@ -4,10 +4,8 @@ App web para controlar una ampolleta Tuya/Smart Life por Bluetooth, sin la app o
 
 ## Archivos
 - `index.html`: interfaz (encender/apagar, blanco/color, brillo, temperatura, color, DP manual y log).
-- `aire.js`: datapoints del aire acondicionado (encendido, temperatura, modo, ventilador) a partir del `mapping`.
 - `tuya-ble.js`: protocolo Tuya BLE v3 (handshake, cifrado AES-CBC, CRC, fragmentación, datapoints).
 - `test/protocolo.test.js`: prueba contra una ampolleta simulada (`node test/protocolo.test.js "$PWD/tuya-ble.js"`).
-- `test/aire.test.js`: prueba el perfil del aire (`node test/aire.test.js "$PWD/aire.js"`).
 - `test/vinculacion.test.js`: prueba la vinculación de una ampolleta sin vincular (`node test/vinculacion.test.js "$PWD/tuya-ble.js"`).
 
 ## Credenciales
@@ -37,10 +35,3 @@ En Windows, Chrome suele cortar la conexión con estas ampolletas apenas conecta
 1 encendido (bool) · 2 modo (enum: 0 blanco, 1 color, 2 escena, 3 música) · 3 brillo (10–1000) · 4 temperatura (0–1000) ·
 5 color (`HHHHSSSSVVVV` en hex: tono 0–360, saturación y valor 0–1000).
 Lo que reporta cada ampolleta queda en el log de "Avanzado".
-
-## Aire acondicionado (Kendal y otros Tuya)
-Los splits Kendal con Wi-Fi usan un módulo Tuya BLE+Wi-Fi ("Climatizador (BLE+WIFI)" en Tuya Smart). Agrega el aire en
-Tuya Smart, vuelve a correr `python -m tinytuya wizard` y carga el devices.json nuevo: la app reconoce el aire por su
-categoría (`kt`) o porque tiene `temp_set`, y muestra su propio panel con temperatura, modo y ventilador. Los valores de
-modo y ventilador salen del `mapping`; sin él usa lo estándar de Tuya (DP 1 encendido, 2 temperatura, 3 temperatura
-actual, 4 modo, 5 ventilador). Igual que con las ampolletas, cierra Tuya Smart antes de conectar por Bluetooth.

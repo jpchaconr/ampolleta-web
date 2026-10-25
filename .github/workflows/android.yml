@@ -1,0 +1,52 @@
+name: App Android
+
+on:
+  push:
+    paths:
+      - "android/**"
+      - ".github/workflows/android.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: android
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - uses: gradle/actions/setup-gradle@v4
+
+      - name: Pruebas y compilación
+        run: ./gradlew --no-daemon testDebugUnitTest assembleDebug
+
+      - name: Renombrar APK
+        run: cp app/build/outputs/apk/debug/app-debug.apk ampolletas.apk
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ampolletas-apk
+          path: android/ampolletas.apk
+
+      # Deja el APK en una versión fija, para descargarlo directo desde el teléfono.
+      - name: Publicar APK
+        if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/android-app'
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: android-${{ github.ref_name }}
+          name: App Android (${{ github.ref_name }})
+          prerelease: true
+          make_latest: false
+          files: android/ampolletas.apk
+          body: |
+            APK de la app de ampolletas, compilado desde ${{ github.sha }}.
+            Descárgalo desde el teléfono y ábrelo para instalarlo.

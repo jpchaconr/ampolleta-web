@@ -22,7 +22,7 @@ private fun ByteArray.toHex() = joinToString("") { "%02x".format(it) }
  * clave nuevos, y guarda el estado que le fijan. Usa javax.crypto directamente, no el código de la app.
  */
 private class FakeAc {
-    val iv = hex("562e17996d093d28ddb3ba695a2e6f58")
+    private val fixedIv = hex("562e17996d093d28ddb3ba695a2e6f58")
     var key = hex("097628343fe99e23765c1513accf8b02")
     val sessionKey = hex("8899aabbccddeeff0011223344556677")
     var state = ByteArray(13).also { it[0] = ((24 - 8) shl 3 or 7).toByte(); it[3] = (5 shl 5).toByte(); it[5] = (1 shl 5).toByte(); it[0x0A] = 0x10 }
@@ -30,7 +30,7 @@ private class FakeAc {
     val commands = mutableListOf<Int>()
 
     private fun aes(mode: Int, k: ByteArray, d: ByteArray) =
-        Cipher.getInstance("AES/CBC/NoPadding").apply { init(mode, SecretKeySpec(k, "AES"), IvParameterSpec(iv)) }.doFinal(d)
+        Cipher.getInstance("AES/CBC/NoPadding").apply { init(mode, SecretKeySpec(k, "AES"), IvParameterSpec(fixedIv)) }.doFinal(d)
     private fun sum(b: ByteArray) = b.fold(0xBEAF) { a, x -> a + (x.toInt() and 0xFF) } and 0xFFFF
     private fun le16(b: ByteArray, p: Int) = (b[p].toInt() and 0xFF) or ((b[p + 1].toInt() and 0xFF) shl 8)
     private fun crc(b: ByteArray, from: Int, to: Int): Int {

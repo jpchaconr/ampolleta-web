@@ -1,0 +1,462 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Mi Ampolleta</title>
+<meta name="theme-color" content="#14161a">
+<style>
+  :root {
+    --bg: #f4f4f1; --card: #ffffff; --text: #1d1f23; --muted: #6b6f76;
+    --line: #e2e2dd; --accent: #e8a33d; --accent-text: #1d1f23; --danger: #c2453d;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #14161a; --card: #1e2126; --text: #ecebe6; --muted: #9a9ea6;
+      --line: #2e3238; --accent: #f0b35a; --accent-text: #14161a; --danger: #e0685f;
+    }
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--bg); color: var(--text);
+    font: 16px/1.45 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  }
+  main { max-width: 480px; margin: 0 auto; padding: 20px 16px 40px; }
+  h1 { font-size: 22px; margin: 4px 0 16px; display: flex; align-items: center; gap: 10px; }
+  .bulb { width: 28px; height: 28px; border-radius: 50%; background: #444; box-shadow: 0 0 0 0 transparent; transition: background .2s, box-shadow .2s; }
+  .card { background: var(--card); border: 1px solid var(--line); border-radius: 14px; padding: 16px; margin-bottom: 14px; }
+  .card h2 { font-size: 14px; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); margin: 0 0 12px; font-weight: 600; }
+  label { display: block; font-size: 14px; color: var(--muted); margin: 10px 0 4px; }
+  input[type=text], input[type=password], input[type=number], select {
+    width: 100%; padding: 10px 12px; font: inherit; color: var(--text);
+    background: var(--bg); border: 1px solid var(--line); border-radius: 10px;
+  }
+  button {
+    font: inherit; font-weight: 600; padding: 11px 16px; border-radius: 10px; cursor: pointer;
+    border: 1px solid var(--line); background: var(--bg); color: var(--text);
+  }
+  button.primary { background: var(--accent); border-color: var(--accent); color: var(--accent-text); }
+  button:disabled { opacity: .5; cursor: default; }
+  .row { display: flex; gap: 10px; align-items: center; }
+  .row > * { flex: 1; }
+  .status { font-size: 14px; color: var(--muted); margin-top: 10px; }
+  .status.err { color: var(--danger); }
+  .seg { display: flex; border: 1px solid var(--line); border-radius: 10px; overflow: hidden; }
+  .seg button { flex: 1; border: 0; border-radius: 0; }
+  .seg button.on { background: var(--accent); color: var(--accent-text); }
+  input[type=range] { width: 100%; accent-color: var(--accent); height: 28px; }
+  input[type=color] { width: 100%; height: 56px; border: 1px solid var(--line); border-radius: 10px; background: var(--bg); padding: 4px; }
+  .swatches { display: grid; grid-template-columns: repeat(6, 1fr); gap: 8px; margin-top: 10px; }
+  .swatches button { height: 36px; padding: 0; border-radius: 8px; }
+  .power { width: 100%; padding: 16px; font-size: 18px; }
+  details summary { cursor: pointer; color: var(--muted); font-size: 14px; }
+  pre { font-size: 12px; max-height: 220px; overflow: auto; background: var(--bg); border-radius: 8px; padding: 10px; margin: 10px 0 0; white-space: pre-wrap; word-break: break-all; }
+  .hidden { display: none; }
+  .hint { font-size: 13px; color: var(--muted); margin: 8px 0 0; }
+  textarea { width: 100%; min-height: 90px; padding: 10px 12px; font: 13px ui-monospace, monospace; color: var(--text); background: var(--bg); border: 1px solid var(--line); border-radius: 10px; }
+  .file { display: block; text-align: center; padding: 12px; border: 1px dashed var(--line); border-radius: 10px; cursor: pointer; color: var(--text); font-weight: 600; margin: 0; }
+  .file input { display: none; }
+  ul.bulbs { list-style: none; padding: 0; margin: 12px 0 0; }
+  ul.bulbs li { display: flex; justify-content: space-between; padding: 8px 0; border-top: 1px solid var(--line); font-size: 15px; }
+  ul.bulbs li span:last-child { color: var(--muted); font-size: 13px; }
+  .chips { display: flex; flex-wrap: wrap; gap: 8px; }
+  .chip { padding: 8px 12px; border-radius: 999px; font-size: 14px; display: flex; align-items: center; gap: 8px; }
+  .chip.on { background: var(--accent); border-color: var(--accent); color: var(--accent-text); }
+  .chip .dot { width: 10px; height: 10px; border-radius: 50%; background: #666; }
+</style>
+</head>
+<body>
+<main>
+  <h1><span class="bulb" id="bulb"></span> Mi Ampolleta</h1>
+
+  <section class="card" id="setup">
+    <h2>Tus ampolletas</h2>
+    <label class="file">Cargar devices.json<input type="file" id="fileInput" accept=".json,application/json"></label>
+    <details style="margin-top:10px">
+      <summary>o pega su contenido</summary>
+      <textarea id="jsonInput" spellcheck="false" placeholder="[ { &quot;id&quot;: ..., &quot;key&quot;: ..., &quot;uuid&quot;: ... } ]"></textarea>
+      <button id="jsonLoad" style="margin-top:8px">Usar este texto</button>
+    </details>
+    <ul class="bulbs" id="bulbList"></ul>
+    <p class="hint">Las claves se guardan solo en este navegador. Cierra Smart Life antes de conectar.</p>
+    <button class="primary" id="connectBtn" style="width:100%;margin-top:12px" disabled>Conectar ampolleta</button>
+    <div class="status" id="status"></div>
+  </section>
+
+  <section id="controls" class="hidden">
+    <div class="card">
+      <div class="chips" id="chips"></div>
+      <button id="addBtn" style="width:100%;margin-top:12px">+ Conectar otra</button>
+    </div>
+
+    <div class="card">
+      <button class="power primary" id="powerBtn">Encender</button>
+    </div>
+
+    <div class="card">
+      <h2>Modo</h2>
+      <div class="seg">
+        <button id="modeWhite">Blanco</button>
+        <button id="modeColour">Color</button>
+      </div>
+      <label for="bright">Brillo</label>
+      <input type="range" id="bright" min="1" max="100" value="100">
+      <div id="whiteBox">
+        <label for="temp">Temperatura (cálido ↔ frío)</label>
+        <input type="range" id="temp" min="0" max="100" value="50">
+      </div>
+      <div id="colourBox" class="hidden">
+        <label for="colour">Color</label>
+        <input type="color" id="colour" value="#ff8800">
+        <div class="swatches" id="swatches"></div>
+      </div>
+    </div>
+
+    <div class="card">
+      <details>
+        <summary>Avanzado</summary>
+        <label>Enviar datapoint manual</label>
+        <div class="row">
+          <input type="number" id="dpId" placeholder="ID" min="1" max="255">
+          <select id="dpType">
+            <option value="1">bool</option><option value="2">value</option>
+            <option value="4">enum</option><option value="3">string</option>
+          </select>
+          <input type="text" id="dpVal" placeholder="valor">
+        </div>
+        <div class="row" style="margin-top:10px">
+          <button id="dpSend">Enviar</button>
+          <button id="disconnectBtn">Desconectar todas</button>
+        </div>
+        <pre id="log"></pre>
+      </details>
+    </div>
+  </section>
+</main>
+
+<script src="tuya-ble.js"></script>
+<script>
+(() => {
+  const { TuyaBLEDevice, DT, DT_NAMES } = window.TuyaBLE;
+  const $ = (id) => document.getElementById(id);
+
+  // ---------- almacenamiento local ----------
+  const store = {
+    get(k) { try { return localStorage.getItem('ampolleta.' + k); } catch { return null; } },
+    set(k, v) { try { localStorage.setItem('ampolleta.' + k, v); } catch {} },
+  };
+
+  // ---------- log ----------
+  function log(msg) {
+    const t = new Date().toLocaleTimeString();
+    $('log').textContent = `${t}  ${msg}\n` + $('log').textContent;
+  }
+  function setStatus(msg, err = false) {
+    $('status').textContent = msg;
+    $('status').classList.toggle('err', err);
+  }
+
+  // ---------- perfiles a partir del "mapping" de devices.json ----------
+  // Por defecto: lo típico de las ampolletas Tuya BLE (DP 1–5 con rangos v2).
+  const DEFAULT_PROFILE = {
+    power: 1, mode: 2, bright: 3, temp: 4, colour: 5,
+    brightMin: 10, brightMax: 1000, tempMin: 0, tempMax: 1000,
+    modeWhite: 0, modeColour: 1, colourV2: true,
+  };
+
+  function profileFromMapping(mapping) {
+    if (!mapping) return { ...DEFAULT_PROFILE };
+    const p = { ...DEFAULT_PROFILE };
+    for (const [id, m] of Object.entries(mapping)) {
+      const v = m.values || {};
+      switch (m.code) {
+        case 'switch_led': p.power = +id; break;
+        case 'work_mode': {
+          p.mode = +id;
+          if (Array.isArray(v.range)) {
+            p.modeWhite = Math.max(0, v.range.indexOf('white'));
+            p.modeColour = Math.max(0, v.range.indexOf('colour'));
+          }
+          break;
+        }
+        case 'bright_value': case 'bright_value_v2':
+          p.bright = +id; p.brightMin = v.min ?? p.brightMin; p.brightMax = v.max ?? p.brightMax; break;
+        case 'temp_value': case 'temp_value_v2':
+          p.temp = +id; p.tempMin = v.min ?? p.tempMin; p.tempMax = v.max ?? p.tempMax; break;
+        case 'colour_data': p.colour = +id; p.colourV2 = false; break;
+        case 'colour_data_v2': p.colour = +id; p.colourV2 = true; break;
+      }
+    }
+    return p;
+  }
+
+  // ---------- credenciales ----------
+  let creds = [];
+  function loadCreds(text, persist = true) {
+    let list;
+    try { list = JSON.parse(text); } catch { setStatus('El texto no es un JSON válido.', true); return; }
+    if (!Array.isArray(list)) list = [list];
+    list = list.filter((d) => d && d.id && d.key && d.uuid).map((d) => ({
+      id: String(d.id), key: String(d.key), uuid: String(d.uuid),
+      name: String(d.name || d.id), mapping: d.mapping || null,
+    }));
+    if (!list.length) { setStatus('No encontré ampolletas con id, key y uuid.', true); return; }
+    creds = list;
+    if (persist) store.set('devices', JSON.stringify(list));
+    renderCreds();
+    setStatus(`${list.length} ampolleta${list.length > 1 ? 's' : ''} cargada${list.length > 1 ? 's' : ''}.`);
+  }
+  function renderCreds() {
+    $('bulbList').innerHTML = '';
+    for (const c of creds) {
+      const li = document.createElement('li');
+      const a = document.createElement('span'); a.textContent = c.name;
+      const b = document.createElement('span'); b.textContent = bulbs.some((x) => x.cred.id === c.id) ? 'conectada' : c.uuid;
+      li.append(a, b);
+      $('bulbList').appendChild(li);
+    }
+    $('connectBtn').disabled = !creds.length;
+  }
+  $('fileInput').onchange = async (e) => {
+    const f = e.target.files[0];
+    if (f) loadCreds(await f.text());
+  };
+  $('jsonLoad').onclick = () => loadCreds($('jsonInput').value);
+
+  // ---------- color ----------
+  function hexToHsv(hex) {
+    const r = parseInt(hex.slice(1, 3), 16) / 255, g = parseInt(hex.slice(3, 5), 16) / 255, b = parseInt(hex.slice(5, 7), 16) / 255;
+    const max = Math.max(r, g, b), min = Math.min(r, g, b), d = max - min;
+    let h = 0;
+    if (d) {
+      if (max === r) h = ((g - b) / d) % 6;
+      else if (max === g) h = (b - r) / d + 2;
+      else h = (r - g) / d + 4;
+      h = Math.round(h * 60);
+      if (h < 0) h += 360;
+    }
+    return { h, s: max ? Math.round((d / max) * 100) : 0, v: Math.round(max * 100) };
+  }
+  function hsvToHex(h, s, v) {
+    s /= 100; v /= 100;
+    const f = (n) => { const k = (n + h / 60) % 6; return v - v * s * Math.max(0, Math.min(k, 4 - k, 1)); };
+    return '#' + [f(5), f(3), f(1)].map((x) => Math.round(x * 255).toString(16).padStart(2, '0')).join('');
+  }
+  const hex4 = (n) => Math.round(n).toString(16).padStart(4, '0');
+
+  function encodeColour(bulb, st) {
+    const v = Math.max(1, st.bright);
+    const p = bulb.profile;
+    if (bulb.types.get(p.colour) === DT.RAW) {
+      const b = new Uint8Array(6), dv = new DataView(b.buffer);
+      dv.setUint16(0, st.h); dv.setUint16(2, st.s * 10); dv.setUint16(4, v * 10);
+      return { type: DT.RAW, value: b };
+    }
+    if (p.colourV2) return { type: DT.STRING, value: hex4(st.h) + hex4(st.s * 10) + hex4(v * 10) };
+    // Formato antiguo: rrggbb + hhhh + ss + vv
+    const b2 = (n) => Math.round(n).toString(16).padStart(2, '0');
+    return { type: DT.STRING, value: hsvToHex(st.h, st.s, v).slice(1) + hex4(st.h) + b2(st.s * 2.55) + b2(v * 2.55) };
+  }
+  function decodeColour(value) {
+    if (value instanceof Uint8Array && value.length === 6) {
+      const dv = new DataView(value.buffer, value.byteOffset);
+      return { h: dv.getUint16(0), s: dv.getUint16(2) / 10, v: dv.getUint16(4) / 10 };
+    }
+    if (typeof value !== 'string') return null;
+    if (value.length === 12) return { h: parseInt(value.slice(0, 4), 16), s: parseInt(value.slice(4, 8), 16) / 10, v: parseInt(value.slice(8, 12), 16) / 10 };
+    if (value.length === 14) return { h: parseInt(value.slice(6, 10), 16), s: parseInt(value.slice(10, 12), 16) / 2.55, v: parseInt(value.slice(12, 14), 16) / 2.55 };
+    return null;
+  }
+
+  // ---------- ampolletas conectadas ----------
+  // Cada una: { dev, cred, profile, types: Map(dp → tipo reportado), state, selected, sending, queued }
+  const bulbs = [];
+  const newState = () => ({ on: false, mode: 'white', bright: 100, temp: 50, h: 30, s: 100 });
+  const selected = () => bulbs.filter((b) => b.selected);
+  const current = () => (selected()[0] || bulbs[0] || { state: newState() }).state;
+
+  function dpsFor(bulb, keys) {
+    const p = bulb.profile, st = bulb.state, out = [];
+    const typed = (id, def, value) => ({ id, type: bulb.types.get(id) ?? def, value });
+    for (const k of keys) {
+      if (k === 'power') out.push(typed(p.power, DT.BOOL, st.on));
+      if (k === 'mode') out.push(typed(p.mode, DT.ENUM, st.mode === 'colour' ? p.modeColour : p.modeWhite));
+      if (k === 'bright') out.push(typed(p.bright, DT.VALUE, Math.round(p.brightMin + (p.brightMax - p.brightMin) * st.bright / 100)));
+      if (k === 'temp') out.push(typed(p.temp, DT.VALUE, Math.round(p.tempMin + (p.tempMax - p.tempMin) * st.temp / 100)));
+      if (k === 'colour') out.push({ id: p.colour, ...encodeColour(bulb, st) });
+    }
+    return out;
+  }
+
+  async function sendTo(bulb, dps) {
+    if (!bulb.dev.connected) return;
+    if (bulb.sending) { bulb.queued = dps; return; }
+    bulb.sending = true;
+    try {
+      await bulb.dev.setDatapoints(dps);
+    } catch (e) {
+      log(`${bulb.cred.name}: ${e.message}`);
+    } finally {
+      bulb.sending = false;
+      if (bulb.queued) { const q = bulb.queued; bulb.queued = null; sendTo(bulb, q); }
+    }
+  }
+
+  // Aplica un cambio de estado a todas las seleccionadas y envía los DP indicados.
+  function apply(change, keys) {
+    for (const b of selected()) {
+      Object.assign(b.state, typeof change === 'function' ? change(b.state) : change);
+      sendTo(b, dpsFor(b, typeof keys === 'function' ? keys(b.state) : keys));
+    }
+    render();
+  }
+
+  // ---------- UI ----------
+  function render() {
+    const st = current();
+    $('powerBtn').textContent = st.on ? 'Apagar' : 'Encender';
+    $('powerBtn').classList.toggle('primary', !st.on);
+    $('modeWhite').classList.toggle('on', st.mode === 'white');
+    $('modeColour').classList.toggle('on', st.mode === 'colour');
+    $('whiteBox').classList.toggle('hidden', st.mode !== 'white');
+    $('colourBox').classList.toggle('hidden', st.mode !== 'colour');
+    $('bright').value = st.bright;
+    $('temp').value = st.temp;
+    $('colour').value = hsvToHex(st.h, st.s, 100);
+
+    const glowOf = (s) => !s.on ? '#555' : s.mode === 'colour' ? hsvToHex(s.h, s.s, 100) : hsvToHex(35 - s.temp * 0.15, 60 - s.temp * 0.55, 100);
+    const glow = glowOf(st);
+    $('bulb').style.background = glow;
+    $('bulb').style.boxShadow = st.on ? `0 0 ${6 + st.bright / 5}px ${glow}` : 'none';
+
+    $('chips').innerHTML = '';
+    for (const b of bulbs) {
+      const c = document.createElement('button');
+      c.className = 'chip' + (b.selected ? ' on' : '');
+      const dot = document.createElement('span'); dot.className = 'dot'; dot.style.background = glowOf(b.state);
+      c.append(dot, b.cred.name);
+      c.onclick = () => { b.selected = !b.selected; if (!selected().length) b.selected = true; render(); };
+      $('chips').appendChild(c);
+    }
+  }
+
+  $('powerBtn').onclick = () => { const on = !current().on; apply({ on }, ['power']); };
+  $('modeWhite').onclick = () => apply({ mode: 'white', on: true }, ['power', 'mode', 'bright', 'temp']);
+  $('modeColour').onclick = () => apply({ mode: 'colour', on: true }, ['power', 'mode', 'colour']);
+  $('bright').oninput = (e) => apply({ bright: +e.target.value }, (s) => (s.mode === 'colour' ? ['colour'] : ['bright']));
+  $('temp').oninput = (e) => apply({ temp: +e.target.value }, ['temp']);
+  $('colour').oninput = (e) => { const { h, s } = hexToHsv(e.target.value); apply({ h, s }, ['colour']); };
+  for (const hex of ['#ff0000', '#ff8800', '#ffee00', '#22dd44', '#00aaff', '#2244ff', '#8833ff', '#ff33aa', '#00ffcc', '#ff5533', '#ffffff', '#ffaa66']) {
+    const b = document.createElement('button');
+    b.style.background = hex;
+    b.setAttribute('aria-label', hex);
+    b.onclick = () => { const { h, s } = hexToHsv(hex); apply({ h, s, mode: 'colour', on: true }, ['power', 'mode', 'colour']); };
+    $('swatches').appendChild(b);
+  }
+
+  $('dpSend').onclick = () => {
+    const id = +$('dpId').value, type = +$('dpType').value, raw = $('dpVal').value;
+    if (!id) return;
+    let value = raw;
+    if (type === DT.BOOL) value = ['1', 'true', 'si', 'sí', 'on'].includes(raw.toLowerCase());
+    else if (type === DT.VALUE || type === DT.ENUM) value = parseInt(raw, 10) || 0;
+    log(`Enviando DP ${id} (${DT_NAMES[type]}) = ${JSON.stringify(value)}`);
+    for (const b of selected()) sendTo(b, [{ id, type, value }]);
+  };
+
+  // ---------- datapoints recibidos ----------
+  function onDatapoints(bulb, dps) {
+    const p = bulb.profile, st = bulb.state;
+    for (const dp of dps) {
+      bulb.types.set(dp.id, dp.type);
+      const shown = dp.value instanceof Uint8Array ? window.TuyaBLE.toHex(dp.value) : JSON.stringify(dp.value);
+      log(`${bulb.cred.name}: DP ${dp.id} (${DT_NAMES[dp.type]}) = ${shown}`);
+      if (dp.id === p.power) st.on = !!dp.value;
+      else if (dp.id === p.mode) st.mode = dp.value === p.modeColour ? 'colour' : 'white';
+      else if (dp.id === p.bright && typeof dp.value === 'number' && st.mode === 'white')
+        st.bright = Math.round(100 * (dp.value - p.brightMin) / (p.brightMax - p.brightMin));
+      else if (dp.id === p.temp && typeof dp.value === 'number')
+        st.temp = Math.round(100 * (dp.value - p.tempMin) / (p.tempMax - p.tempMin));
+      else if (dp.id === p.colour) {
+        const c = decodeColour(dp.value);
+        if (c) { st.h = c.h; st.s = c.s; if (st.mode === 'colour') st.bright = Math.round(c.v); }
+      }
+    }
+    st.bright = Math.max(1, Math.min(100, st.bright));
+    render();
+  }
+
+  // ---------- conexión ----------
+  // Web Bluetooth no muestra la MAC, y todas se llaman "TY": se prueban las credenciales
+  // hasta que una empareja, y se recuerda cuál era para la próxima vez.
+  async function connectBulb() {
+    if (!navigator.bluetooth) {
+      setStatus('Este navegador no soporta Web Bluetooth. Usa Chrome en Android o en el computador.', true);
+      return;
+    }
+    let device;
+    try {
+      device = await TuyaBLEDevice.requestDevice();
+    } catch (e) {
+      if (e.name !== 'NotFoundError') setStatus(e.message, true);
+      return;
+    }
+    if (bulbs.some((b) => b.dev.device === device)) { setStatus('Esa ampolleta ya está conectada.'); return; }
+
+    const remembered = store.get('map.' + device.id);
+    const candidates = creds
+      .filter((c) => !bulbs.some((b) => b.cred.id === c.id))
+      .sort((a, b) => (b.id === remembered) - (a.id === remembered));
+
+    $('connectBtn').disabled = $('addBtn').disabled = true;
+    try {
+      for (const cred of candidates) {
+        setStatus(`Probando con "${cred.name}"…`);
+        log(`Probando credenciales de ${cred.name}`);
+        const dev = new TuyaBLEDevice({ uuid: cred.uuid, localKey: cred.key, deviceId: cred.id, log: (m) => log(`${cred.name}: ${m}`) });
+        const bulb = { dev, cred, profile: profileFromMapping(cred.mapping), types: new Map(), state: newState(), selected: true };
+        dev.onDatapoints = (dps) => onDatapoints(bulb, dps);
+        try {
+          await dev.connectTo(device);
+        } catch (e) {
+          log(`${cred.name}: no coincide (${e.message})`);
+          if (device.gatt.connected) device.gatt.disconnect();
+          continue;
+        }
+        store.set('map.' + device.id, cred.id);
+        dev.onDisconnect = () => {
+          bulbs.splice(bulbs.indexOf(bulb), 1);
+          log(`${cred.name}: se perdió la conexión`);
+          showScreen();
+        };
+        bulbs.push(bulb);
+        setStatus(`Conectada: ${cred.name}`);
+        showScreen();
+        return;
+      }
+      device.gatt.disconnect();
+      setStatus('Ninguna de las credenciales cargadas funcionó con esa ampolleta. ¿Smart Life está cerrada?', true);
+    } finally {
+      $('connectBtn').disabled = !creds.length;
+      $('addBtn').disabled = false;
+    }
+  }
+
+  function showScreen() {
+    $('setup').classList.toggle('hidden', bulbs.length > 0);
+    $('controls').classList.toggle('hidden', bulbs.length === 0);
+    renderCreds();
+    render();
+  }
+
+  $('connectBtn').onclick = connectBulb;
+  $('addBtn').onclick = connectBulb;
+  $('disconnectBtn').onclick = () => { for (const b of [...bulbs]) b.dev.disconnect(); };
+
+  const saved = store.get('devices');
+  if (saved) loadCreds(saved, false);
+  render();
+})();
+</script>
+</body>
+</html>

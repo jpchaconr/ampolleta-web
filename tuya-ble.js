@@ -7,6 +7,8 @@
   const CHAR_NOTIFY = '00002b10-0000-1000-8000-00805f9b34fb';
   const CHAR_WRITE = '00002b11-0000-1000-8000-00805f9b34fb';
   const ADV_SERVICE_UUID = 0xa201;
+  // Los módulos más nuevos (por ejemplo los BLE+Wi-Fi de los aires) anuncian el UUID registrado de Tuya.
+  const ADV_SERVICE_UUID_NEW = 0xfd50;
   const GATT_MTU = 20;
   const RESPONSE_TIMEOUT_MS = 6000;
   const INFO_TIMEOUT_MS = 3000;
@@ -250,7 +252,7 @@
 
     static requestDevice() {
       return navigator.bluetooth.requestDevice({
-        filters: [{ services: [ADV_SERVICE_UUID] }, { namePrefix: 'TY' }],
+        filters: [{ services: [ADV_SERVICE_UUID] }, { services: [ADV_SERVICE_UUID_NEW] }, { namePrefix: 'TY' }],
         optionalServices: [SERVICE_UUID],
       });
     }

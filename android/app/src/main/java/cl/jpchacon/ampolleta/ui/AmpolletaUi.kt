@@ -70,6 +70,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import cl.jpchacon.ampolleta.ac.AcManager
 import cl.jpchacon.ampolleta.ble.BulbManager
 import cl.jpchacon.ampolleta.ble.BulbUi
 import cl.jpchacon.ampolleta.ble.Discovered
@@ -84,10 +85,12 @@ private sealed interface Screen {
     data object Add : Screen
     data object Log : Screen
     data class Control(val mac: String?) : Screen // null = todas
+    data object AddAc : Screen
+    data class Ac(val mac: String) : Screen
 }
 
 @Composable
-fun AmpolletaUi(manager: BulbManager) {
+fun AmpolletaUi(manager: BulbManager, acManager: AcManager) {
     val dark = isSystemInDarkTheme()
     val context = LocalContext.current
     val colors = when {
@@ -99,8 +102,17 @@ fun AmpolletaUi(manager: BulbManager) {
         var screen by remember { mutableStateOf<Screen>(Screen.Home) }
         BackHandler(enabled = screen != Screen.Home) { screen = Screen.Home }
         when (val s = screen) {
-            Screen.Home -> HomeScreen(manager, onOpen = { screen = Screen.Control(it) }, onAdd = { screen = Screen.Add }, onLog = { screen = Screen.Log })
+            Screen.Home -> HomeScreen(
+                manager, acManager,
+                onOpen = { screen = Screen.Control(it) },
+                onOpenAc = { screen = Screen.Ac(it) },
+                onAdd = { screen = Screen.Add },
+                onAddAc = { screen = Screen.AddAc },
+                onLog = { screen = Screen.Log },
+            )
             Screen.Add -> AddScreen(manager, onDone = { screen = Screen.Home })
+            Screen.AddAc -> AddAcScreen(acManager, onDone = { screen = Screen.Home })
+            is Screen.Ac -> AcScreen(acManager, s.mac, onBack = { screen = Screen.Home })
             Screen.Log -> LogScreen(manager, onBack = { screen = Screen.Home })
             is Screen.Control -> ControlScreen(manager, s.mac, onBack = { screen = Screen.Home })
         }
@@ -136,7 +148,7 @@ private fun statusText(b: BulbUi) = when (b.status) {
 }
 
 @Composable
-private fun BackBar(title: String, onBack: () -> Unit, actions: @Composable () -> Unit = {}) {
+internal fun BackBar(title: String, onBack: () -> Unit, actions: @Composable () -> Unit = {}) {
     TopAppBar(
         title = { Text(title) },
         navigationIcon = {
@@ -149,13 +161,23 @@ private fun BackBar(title: String, onBack: () -> Unit, actions: @Composable () -
 // ---------- inicio ----------
 
 @Composable
-private fun HomeScreen(manager: BulbManager, onOpen: (String?) -> Unit, onAdd: () -> Unit, onLog: () -> Unit) {
+private fun HomeScreen(
+    manager: BulbManager,
+    acManager: AcManager,
+    onOpen: (String?) -> Unit,
+    onOpenAc: (String) -> Unit,
+    onAdd: () -> Unit,
+    onAddAc: () -> Unit,
+    onLog: () -> Unit,
+) {
     val bulbs by manager.bulbs.collectAsState()
+    val acs by acManager.acs.collectAsState()
     var menu by remember { mutableStateOf(false) }
+    var choosing by remember { mutableStateOf(false) }
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("Mis ampolletas") },
+                title = { Text("Mi casa") },
                 actions = {
                     IconButton(onClick = { menu = true }) { Icon(Icons.Default.MoreVert, contentDescription = "Más") }
                     DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
@@ -165,7 +187,7 @@ private fun HomeScreen(manager: BulbManager, onOpen: (String?) -> Unit, onAdd: (
             )
         },
         floatingActionButton = {
-            ExtendedFloatingActionButton(onClick = onAdd, icon = { Icon(Icons.Default.Add, null) }, text = { Text("Agregar") })
+            ExtendedFloatingActionButton(onClick = { choosing = true }, icon = { Icon(Icons.Default.Add, null) }, text = { Text("Agregar") })
         },
     ) { padding ->
         val list = bulbs.values.sortedBy { it.name }
@@ -174,13 +196,13 @@ private fun HomeScreen(manager: BulbManager, onOpen: (String?) -> Unit, onAdd: (
             contentPadding = PaddingValues(16.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
-            if (list.isEmpty()) {
+            if (list.isEmpty() && acs.isEmpty()) {
                 item {
                     Card(Modifier.fillMaxWidth()) {
                         Column(Modifier.padding(20.dp)) {
-                            Text("Todavía no tienes ampolletas", style = MaterialTheme.typography.titleMedium)
+                            Text("Todavía no tienes equipos", style = MaterialTheme.typography.titleMedium)
                             Spacer(Modifier.height(8.dp))
-                            Text("Toca \"Agregar\" con la ampolleta encendida y cerca del teléfono.")
+                            Text("Toca \"Agregar\" para sumar una ampolleta (encendida y cerca del teléfono) o un aire con Wi-Fi.")
                         }
                     }
                 }
@@ -215,7 +237,25 @@ private fun HomeScreen(manager: BulbManager, onOpen: (String?) -> Unit, onAdd: (
                     }
                 }
             }
+            items(acs.values.sortedBy { it.name }, key = { "ac-" + it.mac }) { a ->
+                AcCard(a, acManager) { onOpenAc(a.mac) }
+            }
         }
+    }
+
+    if (choosing) {
+        AlertDialog(
+            onDismissRequest = { choosing = false },
+            title = { Text("¿Qué quieres agregar?") },
+            text = {
+                Column {
+                    TextButton(onClick = { choosing = false; onAdd() }, modifier = Modifier.fillMaxWidth()) { Text("Ampolleta (Bluetooth)") }
+                    TextButton(onClick = { choosing = false; onAddAc() }, modifier = Modifier.fillMaxWidth()) { Text("Aire acondicionado (Wi-Fi, AC Freedom)") }
+                }
+            },
+            confirmButton = {},
+            dismissButton = { TextButton(onClick = { choosing = false }) { Text("Cancelar") } },
+        )
     }
 }
 

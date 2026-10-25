@@ -13,15 +13,18 @@ import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.core.content.ContextCompat
+import cl.jpchacon.ampolleta.ac.AcManager
 import cl.jpchacon.ampolleta.ble.BulbManager
 import cl.jpchacon.ampolleta.ui.AmpolletaUi
 
 class AmpolletaApp : Application() {
     val manager by lazy { BulbManager(this) }
+    val acManager by lazy { AcManager(this) { manager.log(it) } }
 }
 
 class MainActivity : ComponentActivity() {
     private val manager get() = (application as AmpolletaApp).manager
+    private val acManager get() = (application as AmpolletaApp).acManager
 
     private val permissions: Array<String> =
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
@@ -42,19 +45,21 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
         setContent {
-            AmpolletaUi(manager)
+            AmpolletaUi(manager, acManager)
         }
         if (!hasPermissions()) permissionLauncher.launch(permissions)
     }
 
     override fun onResume() {
         super.onResume()
+        acManager.start()
         if (hasPermissions()) ensureBluetoothOn()
     }
 
     override fun onPause() {
         super.onPause()
         manager.stopScan()
+        acManager.stop()
     }
 
     private fun hasPermissions() = permissions.all {

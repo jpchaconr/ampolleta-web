@@ -4,6 +4,10 @@
 
     <uses-feature android:name="android.hardware.bluetooth_le" android:required="true" />
 
+    <!-- Aires con módulo Wi-Fi Broadlink (AC Freedom): UDP en la red local -->
+    <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.ACCESS_WIFI_STATE" />
+
     <!-- Android 12 o superior -->
     <uses-permission
         android:name="android.permission.BLUETOOTH_SCAN"

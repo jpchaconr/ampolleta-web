@@ -4,7 +4,11 @@ import android.content.Context
 import android.net.ConnectivityManager
 import android.net.Network
 import android.net.NetworkCapabilities
+import android.net.NetworkRequest
 import android.net.wifi.WifiManager
+import android.net.wifi.WifiNetworkSpecifier
+import android.os.Build
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -20,10 +24,12 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeout
 import org.json.JSONArray
 import org.json.JSONObject
 import java.net.DatagramPacket
 import java.net.DatagramSocket
+import java.net.Inet4Address
 import java.net.InetAddress
 import java.net.InetSocketAddress
 import java.net.SocketTimeoutException
@@ -268,7 +274,7 @@ class AcManager(private val context: Context, private val log: (String) -> Unit)
             sessions.remove(a.mac)?.changes?.close()
             log("${a.name}: ${e.message}")
             if (d.locked) {
-                Result.failure(Exception("${e.message}. El aire está bloqueado por AC Freedom: vincúlalo de nuevo con \"Configurar Wi-Fi de un aire\"."))
+                Result.failure(Exception("${e.message}. El aire está bloqueado por AC Freedom: vincúlalo de nuevo con \"Vincular un aire nuevo al Wi-Fi\"."))
             } else {
                 Result.failure(e)
             }
@@ -285,45 +291,162 @@ class AcManager(private val context: Context, private val log: (String) -> Unit)
         return cm.allNetworks.firstOrNull { cm.getNetworkCapabilities(it)?.hasTransport(NetworkCapabilities.TRANSPORT_WIFI) == true }
     }
 
-    /**
-     * Configura el Wi-Fi de un aire en modo AP. El teléfono tiene que estar conectado a la red que crea
-     * el aire. Se envía varias veces porque es UDP y el aire no responde.
-     */
-    suspend fun provision(ssid: String, password: String, security: Broadlink.WifiSecurity): Result<Unit> = withContext(Dispatchers.IO) {
+    // ---------- vincular al Wi-Fi ----------
+
+    /** Un Wi-Fi visible, para elegir la red que crea el aire en modo vinculación. */
+    data class WifiSeen(val ssid: String, val level: Int, val open: Boolean, val likelyAc: Boolean)
+
+    private val wifi get() = context.applicationContext.getSystemService(WifiManager::class.java)
+
+    /** El Wi-Fi al que está conectado el teléfono, o null si Android no lo dice (falta el permiso de ubicación). */
+    fun currentSsid(): String? = try {
+        @Suppress("DEPRECATION")
+        wifi?.connectionInfo?.ssid?.removeSurrounding("\"")?.takeIf { it.isNotBlank() && it != "<unknown ssid>" }
+    } catch (e: Exception) {
+        null
+    }
+
+    /** Lo que se usó la última vez para vincular, guardado solo en este teléfono. */
+    val savedHomeSsid: String? get() = prefs.getString("wifi_ssid", null)
+    val savedHomePassword: String? get() = prefs.getString("wifi_password", null)
+
+    /** Busca redes Wi-Fi cercanas. La del aire en modo vinculación suele ser abierta (sin clave). */
+    suspend fun scanWifi(): List<WifiSeen> = withContext(Dispatchers.IO) {
+        val wm = wifi ?: return@withContext emptyList()
         try {
-            val packet = Broadlink.setupPacket(ssid, password, security)
-            val targets = broadcastAddresses().toMutableList()
+            @Suppress("DEPRECATION")
+            wm.startScan() // Android limita cuántas veces se puede; si no, quedan los resultados recientes.
+            delay(3000)
+            val home = currentSsid()
+            wm.scanResults
+                .mapNotNull { r ->
+                    @Suppress("DEPRECATION")
+                    val name = r.SSID?.takeIf { it.isNotBlank() } ?: return@mapNotNull null
+                    if (name == home) return@mapNotNull null
+                    val open = listOf("WPA", "WEP", "SAE", "PSK", "EAP").none { r.capabilities.contains(it) }
+                    val likely = AC_HINTS.any { name.contains(it, ignoreCase = true) }
+                    WifiSeen(name, r.level, open, likely)
+                }
+                .groupBy { it.ssid }.map { (_, v) -> v.maxBy { it.level } }
+                .sortedWith(compareByDescending<WifiSeen> { it.likelyAc }.thenByDescending { it.open }.thenByDescending { it.level })
+        } catch (e: SecurityException) {
+            log("Sin permiso para buscar redes Wi-Fi")
+            emptyList()
+        }
+    }
+
+    /**
+     * Conecta el teléfono a la red del aire solo para esta app (Android 10+). Android muestra un diálogo
+     * para aceptar; al soltarla, el teléfono vuelve solo a su Wi-Fi.
+     */
+    private suspend fun connectToAp(apSsid: String): Pair<Network, ConnectivityManager.NetworkCallback> {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) throw BroadlinkException("conectarse desde la app necesita Android 10 o superior")
+        val cm = context.getSystemService(ConnectivityManager::class.java) ?: throw BroadlinkException("sin acceso a la red")
+        val request = NetworkRequest.Builder()
+            .addTransportType(NetworkCapabilities.TRANSPORT_WIFI)
+            .removeCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)
+            .setNetworkSpecifier(WifiNetworkSpecifier.Builder().setSsid(apSsid).build())
+            .build()
+        val result = CompletableDeferred<Network>()
+        val callback = object : ConnectivityManager.NetworkCallback() {
+            override fun onAvailable(network: Network) {
+                result.complete(network)
+            }
+
+            override fun onUnavailable() {
+                result.completeExceptionally(BroadlinkException("no me pude conectar a \"$apSsid\""))
+            }
+        }
+        cm.requestNetwork(request, callback)
+        return try {
+            withTimeout(90_000) { result.await() } to callback
+        } catch (e: Exception) {
+            cm.unregisterNetworkCallback(callback)
+            throw if (e is BroadlinkException) e else BroadlinkException("no me pude conectar a \"$apSsid\"")
+        }
+    }
+
+    /** Dónde enviar en la red del aire: broadcast y la puerta de enlace, que en modo AP suele ser el aire. */
+    private fun targetsOn(network: Network?): List<InetAddress> {
+        val out = mutableListOf(InetAddress.getByName("255.255.255.255"))
+        val cm = context.getSystemService(ConnectivityManager::class.java)
+        val lp = network?.let { cm?.getLinkProperties(it) }
+        if (lp != null) {
+            for (la in lp.linkAddresses) {
+                val a = la.address as? Inet4Address ?: continue
+                val ip = a.address.fold(0) { acc, b -> (acc shl 8) or (b.toInt() and 0xFF) }
+                val mask = if (la.prefixLength == 0) 0 else -1 shl (32 - la.prefixLength)
+                val bcast = (ip and mask) or mask.inv()
+                out += InetAddress.getByAddress(ByteArray(4) { (bcast shr (24 - 8 * it)).toByte() })
+            }
+            lp.routes.mapNotNull { it.gateway as? Inet4Address }.filterNot { it.isAnyLocalAddress }.forEach { out += it }
+        } else {
+            out.clear()
+            out += broadcastAddresses()
             try {
                 @Suppress("DEPRECATION")
-                val gw = context.applicationContext.getSystemService(WifiManager::class.java)?.dhcpInfo?.gateway ?: 0
-                // En modo AP el aire suele ser la puerta de enlace de su propia red.
-                if (gw != 0) targets += InetAddress.getByAddress(ByteArray(4) { (gw shr (8 * it)).toByte() })
+                val gw = wifi?.dhcpInfo?.gateway ?: 0
+                if (gw != 0) out += InetAddress.getByAddress(ByteArray(4) { (gw shr (8 * it)).toByte() })
             } catch (e: Exception) {
                 // Queda el broadcast.
             }
-            val socket = DatagramSocket()
-            try {
-                wifiNetwork()?.bindSocket(socket) ?: log("No encontré el Wi-Fi conectado; envío igual")
-                socket.broadcast = true
-                repeat(3) {
-                    for (addr in targets) {
-                        try {
-                            socket.send(DatagramPacket(packet, packet.size, addr, Broadlink.PORT))
-                        } catch (e: Exception) {
-                            log("No se pudo enviar a $addr: ${e.message}")
-                        }
-                    }
-                    delay(500)
-                }
-            } finally {
-                socket.close()
-            }
-            log("Wi-Fi \"$ssid\" enviado al aire (${targets.joinToString { it.hostAddress ?: "?" }})")
-            Result.success(Unit)
-        } catch (e: Exception) {
-            log("No se pudo configurar el Wi-Fi del aire: ${e.message}")
-            Result.failure(e)
         }
+        return out.distinct()
+    }
+
+    /**
+     * Configura el Wi-Fi de un aire en modo AP. Con apSsid, la app se conecta sola a la red del aire;
+     * sin él, el teléfono ya tiene que estar conectado a esa red. Se envía varias veces porque es UDP
+     * y el aire no responde.
+     */
+    suspend fun provision(ssid: String, password: String, security: Broadlink.WifiSecurity, apSsid: String? = null): Result<Unit> =
+        withContext(Dispatchers.IO) {
+            var callback: ConnectivityManager.NetworkCallback? = null
+            try {
+                val packet = Broadlink.setupPacket(ssid, password, security)
+                prefs.edit().putString("wifi_ssid", ssid).putString("wifi_password", password).apply()
+                val network = if (apSsid != null) {
+                    log("Conectándome a la red del aire \"$apSsid\"…")
+                    connectToAp(apSsid).let { (n, cb) -> callback = cb; n }
+                } else {
+                    wifiNetwork()
+                }
+                val targets = targetsOn(network)
+                val socket = DatagramSocket()
+                try {
+                    network?.bindSocket(socket) ?: log("No encontré el Wi-Fi conectado; envío igual")
+                    socket.broadcast = true
+                    repeat(3) {
+                        for (addr in targets) {
+                            try {
+                                socket.send(DatagramPacket(packet, packet.size, addr, Broadlink.PORT))
+                            } catch (e: Exception) {
+                                log("No se pudo enviar a $addr: ${e.message}")
+                            }
+                        }
+                        delay(500)
+                    }
+                } finally {
+                    socket.close()
+                }
+                log("Wi-Fi \"$ssid\" enviado al aire (${targets.joinToString { it.hostAddress ?: "?" }})")
+                Result.success(Unit)
+            } catch (e: Exception) {
+                log("No se pudo configurar el Wi-Fi del aire: ${e.message}")
+                Result.failure(e)
+            } finally {
+                callback?.let { cb -> context.getSystemService(ConnectivityManager::class.java)?.unregisterNetworkCallback(cb) }
+            }
+        }
+
+    /** Espera a que aparezca en el Wi-Fi un aire que todavía no está en la app (después de vincularlo). */
+    suspend fun waitForNew(timeoutMs: Long = 120_000): FoundDevice? {
+        val end = System.currentTimeMillis() + timeoutMs
+        while (System.currentTimeMillis() < end) {
+            discover(4).firstOrNull { it.macText !in _acs.value }?.let { return it }
+            delay(2000)
+        }
+        return null
     }
 
     /** Cambia el estado del aire en pantalla al tiro y lo envía completo. */
@@ -349,5 +472,7 @@ class AcManager(private val context: Context, private val log: (String) -> Unit)
 
     private companion object {
         const val KEY = "aires"
+        // Nombres típicos de la red que crea el módulo en modo vinculación.
+        val AC_HINTS = listOf("broadlink", "aux", "kendal", "ac-", "ac_", "hvac", "bl_")
     }
 }

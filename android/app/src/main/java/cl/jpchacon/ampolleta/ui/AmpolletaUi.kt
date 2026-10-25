@@ -113,7 +113,7 @@ fun AmpolletaUi(manager: BulbManager, acManager: AcManager) {
             )
             Screen.Add -> AddScreen(manager, onDone = { screen = Screen.Home })
             Screen.AddAc -> AddAcScreen(acManager, onDone = { screen = Screen.Home }, onSetup = { screen = Screen.SetupAc })
-            Screen.SetupAc -> SetupAcScreen(acManager, onBack = { screen = Screen.AddAc }, onSearch = { screen = Screen.AddAc })
+            Screen.SetupAc -> SetupAcScreen(acManager, onBack = { screen = Screen.AddAc }, onDone = { screen = Screen.Home })
             is Screen.Ac -> AcScreen(acManager, s.mac, onBack = { screen = Screen.Home })
             Screen.Log -> LogScreen(manager, onBack = { screen = Screen.Home })
             is Screen.Control -> ControlScreen(manager, s.mac, onBack = { screen = Screen.Home })

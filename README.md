@@ -35,3 +35,13 @@ En Windows, Chrome suele cortar la conexión con estas ampolletas apenas conecta
 1 encendido (bool) · 2 modo (enum: 0 blanco, 1 color, 2 escena, 3 música) · 3 brillo (10–1000) · 4 temperatura (0–1000) ·
 5 color (`HHHHSSSSVVVV` en hex: tono 0–360, saturación y valor 0–1000).
 Lo que reporta cada ampolleta queda en el log de "Avanzado".
+
+## Aire acondicionado (app Android)
+Los aires Kendal (fabricados por AUX) con Wi-Fi usan un módulo Broadlink que se configura con la app AC Freedom. La app
+Android los controla directo por la red local (UDP, puerto 80), sin la nube, con el protocolo de
+[python-broadlink](https://github.com/mjg59/python-broadlink): encendido, temperatura, modo, ventilador, aleta, dormir,
+turbo y pantalla, y muestra la temperatura ambiente.
+- Primero conecta el aire a tu Wi-Fi con AC Freedom. El teléfono tiene que estar en esa misma red.
+- En la app: "Agregar" → "Aire acondicionado"; la app lo busca en la red. Si el router le cambia la IP, lo vuelve a buscar solo.
+- Si el aire no acepta la conexión, revisa que no esté bloqueado ("lock") en AC Freedom.
+- El navegador no puede mandar paquetes UDP, por eso esto está solo en la app Android.

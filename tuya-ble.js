@@ -17,6 +17,7 @@
     PAIR: 0x0001,
     DPS: 0x0002,
     DEVICE_STATUS: 0x0003,
+    UNBIND: 0x0005,
     RECEIVE_DP: 0x8001,
     RECEIVE_TIME_DP: 0x8003,
     RECEIVE_SIGN_DP: 0x8004,
@@ -360,6 +361,15 @@
       await this.attach(write, notify);
     }
 
+    // Borra la vinculación guardada en la ampolleta y la desconecta. Queda lista para
+    // agregarla de nuevo (aquí, en la app Android o en Smart Life).
+    async unbind() {
+      await this._send(CODE.UNBIND, new Uint8Array(0));
+      this.paired = false;
+      this.log('Ampolleta desvinculada');
+      this.disconnect();
+    }
+
     disconnect() {
       if (this.gatt && this.gatt.connected) this.gatt.disconnect();
     }
@@ -526,6 +536,7 @@
           result = data[0] === 2 ? 0 : data[0];
           break;
         case CODE.DEVICE_STATUS:
+        case CODE.UNBIND:
         case CODE.DPS:
           result = data.length ? data[0] : 0;
           break;

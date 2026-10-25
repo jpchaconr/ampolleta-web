@@ -64,6 +64,11 @@ function fakeBulb({ uuid, loginKey, bound }) {
       send(0x8001, Buffer.from([1, 1, 1, 1]), 0, 5);
     } else if (code === 2) {
       send(2, Buffer.from([0]), seq, 5);
+    } else if (code === 5) {
+      // Como el SDK: responde con la clave actual y después borra la vinculación.
+      send(5, Buffer.from([0]), seq, 5);
+      state.loginKey = Buffer.alloc(6);
+      state.bound = false;
     }
   }
 
@@ -109,7 +114,15 @@ async function connect(bulb, cred) {
   assert(!r.logs.some((l) => l.includes('sin vincular')), 'la reconexión no debería necesitar el modo sin vincular');
   console.log('reconexión tras vincular: OK');
 
-  // 4. Sin vincular pero con las credenciales de otra ampolleta: el PAIR falla y no la vincula.
+  // 4. Desvincular: la ampolleta borra la clave y una conexión nueva la vuelve a vincular.
+  await r.dev.unbind();
+  assert(!bulb.state.bound, 'debería quedar sin vincular');
+  assert.deepStrictEqual(bulb.state.loginKey, Buffer.alloc(6), 'debería borrar la clave');
+  r = await connect(bulb, cred);
+  assert(bulb.state.bound && r.logs.some((l) => l.includes('sin vincular')), 'debería vincularla de nuevo');
+  console.log('desvincular: OK');
+
+  // 5. Sin vincular pero con las credenciales de otra ampolleta: el PAIR falla y no la vincula.
   bulb = fakeBulb({ uuid: 'tuya9b9e6e1dcf9c', loginKey: Buffer.alloc(6), bound: false });
   await assert.rejects(connect(bulb, cred));
   assert(!bulb.state.bound, 'no debería vincularse con otra uuid');

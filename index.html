@@ -87,6 +87,7 @@
     <div class="card">
       <div class="chips" id="chips"></div>
       <button id="addBtn" style="width:100%;margin-top:12px">+ Conectar otra</button>
+      <button id="unbindBtn" style="width:100%;margin-top:8px;color:var(--danger)">Desvincular seleccionadas</button>
     </div>
 
     <div class="card">
@@ -464,6 +465,27 @@
   };
   $('connectBtn').onclick = connectBulb;
   $('addBtn').onclick = connectBulb;
+  $('unbindBtn').onclick = async () => {
+    const targets = selected();
+    if (!targets.length) return;
+    const names = targets.map((b) => b.cred.name).join(', ');
+    if (!confirm(`¿Desvincular ${names}? Se borra la clave guardada en la ampolleta y quedará lista para agregarla de nuevo, aquí, en la app Android o en Smart Life.`)) return;
+    $('unbindBtn').disabled = true;
+    for (const b of targets) {
+      try {
+        await b.dev.unbind();
+        log(`${b.cred.name}: desvinculada`);
+      } catch (e) {
+        log(`${b.cred.name}: no se pudo desvincular (${e.message})`);
+        continue;
+      }
+      const i = bulbs.indexOf(b);
+      if (i >= 0) bulbs.splice(i, 1);
+    }
+    $('unbindBtn').disabled = false;
+    if (!bulbs.some((b) => b.selected) && bulbs[0]) bulbs[0].selected = true;
+    showScreen();
+  };
   $('disconnectBtn').onclick = () => { for (const b of [...bulbs]) b.dev.disconnect(); };
 
   const saved = store.get('devices');

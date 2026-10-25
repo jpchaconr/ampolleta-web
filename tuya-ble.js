@@ -284,6 +284,9 @@
     // Recibe la característica de escritura y notificación ya resueltas (sirve para pruebas).
     async attach(writeChar, notifyChar) {
       this._reset();
+      if (this.notifyChar && this._onValue) {
+        this.notifyChar.removeEventListener('characteristicvaluechanged', this._onValue);
+      }
       this.writeChar = writeChar;
       this.notifyChar = notifyChar;
       this._onValue = (ev) => {
@@ -302,8 +305,24 @@
       await this._send(CODE.DEVICE_STATUS, new Uint8Array(0));
     }
 
-    async connect() {
-      this.log(`Conectando a ${this.device.name || 'ampolleta'}…`);
+    // En Android la conexión BLE a veces se cae apenas se establece; se reintenta
+    // mientras el error sea de enlace (desconexión) y no de protocolo o de clave.
+    async connect(attempts = 5) {
+      for (let i = 1; ; i++) {
+        try {
+          this.log(`Conectando a ${this.device.name || 'ampolleta'} (intento ${i} de ${attempts})…`);
+          await this._connectOnce();
+          return;
+        } catch (e) {
+          const linkLost = !this.device.gatt.connected;
+          if (!linkLost || i >= attempts) throw e;
+          this.log(`Se cortó la conexión (${e.message}), reintentando…`);
+          await new Promise((r) => setTimeout(r, 600 * i));
+        }
+      }
+    }
+
+    async _connectOnce() {
       this.gatt = this.device.gatt.connected ? this.device.gatt : await this.device.gatt.connect();
       const service = await this.gatt.getPrimaryService(SERVICE_UUID);
       const notify = await service.getCharacteristic(CHAR_NOTIFY);

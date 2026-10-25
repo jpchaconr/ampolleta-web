@@ -308,6 +308,8 @@
       const service = await this.gatt.getPrimaryService(SERVICE_UUID);
       const notify = await service.getCharacteristic(CHAR_NOTIFY);
       const write = await service.getCharacteristic(CHAR_WRITE);
+      const pr = write.properties || {};
+      this.log(`Característica de escritura: ${pr.write ? 'write ' : ''}${pr.writeWithoutResponse ? 'writeWithoutResponse' : ''}`);
       await this.attach(write, notify);
     }
 
@@ -376,7 +378,13 @@
       }
       const write = this.writeQueue.then(async () => {
         const packets = await this._buildPackets(seq, code, data, responseTo);
-        for (const p of packets) await this.writeChar.writeValueWithoutResponse(p);
+        for (const p of packets) {
+          if (!this.paired) this.log(`TX ${toHex(p)}`);
+          // Algunas ampolletas solo aceptan escritura con respuesta.
+          const props = this.writeChar.properties;
+          if (props && !props.writeWithoutResponse && props.write) await this.writeChar.writeValueWithResponse(p);
+          else await this.writeChar.writeValueWithoutResponse(p);
+        }
       });
       this.writeQueue = write.catch(() => {});
       return waitForResponse ? write.then(() => result) : write;
@@ -397,6 +405,7 @@
     }
 
     _onNotify(data) {
+      if (!this.paired) this.log(`RX ${toHex(data)}`);
       try {
         let [packetNum, pos] = unpackInt(data, 0);
         if (packetNum !== this.inExpectedPacket) {

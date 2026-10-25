@@ -128,9 +128,16 @@
           <button id="dpSend">Enviar</button>
           <button id="disconnectBtn">Desconectar todas</button>
         </div>
-        <pre id="log"></pre>
       </details>
     </div>
+  </section>
+
+  <section class="card">
+    <details id="logBox">
+      <summary>Registro</summary>
+      <button id="copyLog" style="margin-top:10px">Copiar registro</button>
+      <pre id="log"></pre>
+    </details>
   </section>
 </main>
 
@@ -419,7 +426,7 @@
         try {
           await dev.connectTo(device);
         } catch (e) {
-          log(`${cred.name}: no coincide (${e.message})`);
+          log(`${cred.name}: falló (${e.name}: ${e.message})`);
           if (device.gatt.connected) device.gatt.disconnect();
           continue;
         }
@@ -435,7 +442,8 @@
         return;
       }
       device.gatt.disconnect();
-      setStatus('Ninguna de las credenciales cargadas funcionó con esa ampolleta. ¿Smart Life está cerrada?', true);
+      setStatus('Ninguna de las credenciales cargadas funcionó con esa ampolleta. ¿Smart Life está cerrada? Abre "Registro" abajo para ver el detalle.', true);
+      $('logBox').open = true;
     } finally {
       $('connectBtn').disabled = !creds.length;
       $('addBtn').disabled = false;
@@ -449,6 +457,11 @@
     render();
   }
 
+  $('copyLog').onclick = async () => {
+    try { await navigator.clipboard.writeText($('log').textContent); $('copyLog').textContent = 'Copiado'; }
+    catch { $('copyLog').textContent = 'No se pudo copiar'; }
+    setTimeout(() => ($('copyLog').textContent = 'Copiar registro'), 1500);
+  };
   $('connectBtn').onclick = connectBulb;
   $('addBtn').onclick = connectBulb;
   $('disconnectBtn').onclick = () => { for (const b of [...bulbs]) b.dev.disconnect(); };

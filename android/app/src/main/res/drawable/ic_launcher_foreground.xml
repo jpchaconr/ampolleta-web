@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- La ampolleta del ícono, dentro de la zona segura de 66 dp de los íconos adaptables. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <path android:fillColor="#F0B35A" android:pathData="M54,26a20,20 0,0 0,-11.8 36.1c2.4,1.7 3.6,4.2 3.6,6.6v2.7h16.4v-2.7c0,-2.4 1.2,-4.9 3.6,-6.6A20,20 0,0 0,54 26z" />
+    <path android:fillColor="#ECEBE6" android:pathData="M45.8,74.4h16.4v3.6h-16.4zM47.6,80.8h12.8v3.6h-12.8z" />
+</vector>

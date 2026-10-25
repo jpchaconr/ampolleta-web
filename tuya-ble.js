@@ -9,6 +9,8 @@
   const ADV_SERVICE_UUID = 0xa201;
   const GATT_MTU = 20;
   const RESPONSE_TIMEOUT_MS = 6000;
+  const INFO_TIMEOUT_MS = 3000;
+  const LOGIN_KEY_LEN = 6;
 
   const CODE = {
     DEVICE_INFO: 0x0000,
@@ -296,10 +298,36 @@
       notifyChar.addEventListener('characteristicvaluechanged', this._onValue);
       await notifyChar.startNotifications();
 
+      // Una ampolleta vinculada responde con la clave de login (md5 de la local_key).
+      // Una sin vincular tiene la clave de login en ceros y solo responde con esa.
       this.log('Pidiendo información del dispositivo…');
-      await this._send(CODE.DEVICE_INFO, new Uint8Array(0));
-      this.log('Emparejando…');
+      this.sessionSeed = this.localKey;
+      this.loginKey = md5(this.localKey);
+      try {
+        await this._send(CODE.DEVICE_INFO, new Uint8Array(0), 0, INFO_TIMEOUT_MS);
+      } catch (e) {
+        if (this.device && !this.device.gatt.connected) throw e;
+        this.log('Sin respuesta con la clave; probando como ampolleta sin vincular…');
+        this.sessionSeed = new Uint8Array(LOGIN_KEY_LEN);
+        this.loginKey = md5(this.sessionSeed);
+        await this._send(CODE.DEVICE_INFO, new Uint8Array(0), 0, INFO_TIMEOUT_MS);
+      }
+
+      if (!this.bound) {
+        // El PAIR guarda nuestra local_key en la ampolleta y la deja vinculada. Desde ese
+        // momento la clave de sesión pasa a derivarse de la local_key.
+        this.log('La ampolleta no está vinculada: vinculándola con tu local_key…');
+        this.nextSessionKey = md5(concat(this.localKey, this.srand));
+      } else {
+        this.log('Emparejando…');
+      }
       await this._send(CODE.PAIR, this._pairingRequest());
+      if (this.nextSessionKey) {
+        this.sessionKey = this.nextSessionKey;
+        this.nextSessionKey = null;
+        this.loginKey = md5(this.localKey);
+        this.log('Ampolleta vinculada');
+      }
       this.paired = true;
       this.log('Conectado y emparejado');
       await this._send(CODE.DEVICE_STATUS, new Uint8Array(0));
@@ -382,7 +410,7 @@
       return packets;
     }
 
-    _send(code, data, responseTo = 0) {
+    _send(code, data, responseTo = 0, timeoutMs = RESPONSE_TIMEOUT_MS) {
       const seq = this.seq++;
       const waitForResponse = responseTo === 0;
       let result = null;
@@ -391,7 +419,7 @@
           const timer = setTimeout(() => {
             this.pending.delete(seq);
             reject(new Error(`Sin respuesta al comando 0x${code.toString(16)}`));
-          }, RESPONSE_TIMEOUT_MS);
+          }, timeoutMs);
           this.pending.set(seq, { resolve, reject, timer, code });
         });
       }
@@ -458,19 +486,27 @@
     }
 
     async _parseInput(buf) {
-      const key = this._keyFor(buf[0]);
-      const raw = await aesDecryptNoPad(key, buf.slice(1, 17), buf.slice(17));
-      const dv = new DataView(raw.buffer);
-      const seq = dv.getUint32(0);
-      const responseTo = dv.getUint32(4);
-      const code = dv.getUint16(8);
-      const length = dv.getUint16(10);
-      const end = 12 + length;
-      if (raw.length < end) throw new Error('longitud inválida');
-      if (raw.length >= end + 2 && crc16(raw.slice(0, end)) !== dv.getUint16(end)) {
-        throw new Error('CRC inválido');
+      // Mientras se vincula, la respuesta al PAIR puede venir con la clave de sesión nueva.
+      const keys = [this._keyFor(buf[0])];
+      if (buf[0] === 5 && this.nextSessionKey) keys.push(this.nextSessionKey);
+      let lastError;
+      for (const key of keys) {
+        try {
+          const raw = await aesDecryptNoPad(key, buf.slice(1, 17), buf.slice(17));
+          const dv = new DataView(raw.buffer);
+          const length = dv.getUint16(10);
+          const end = 12 + length;
+          if (raw.length < end) throw new Error('longitud inválida');
+          if (raw.length >= end + 2 && crc16(raw.slice(0, end)) !== dv.getUint16(end)) {
+            throw new Error('CRC inválido');
+          }
+          await this._handle(dv.getUint32(0), dv.getUint32(4), dv.getUint16(8), raw.slice(12, end));
+          return;
+        } catch (e) {
+          lastError = e;
+        }
       }
-      await this._handle(seq, responseTo, code, raw.slice(12, end));
+      throw lastError;
     }
 
     async _handle(seq, responseTo, code, data) {
@@ -481,7 +517,9 @@
           this.protocolVersion = data[2];
           this.deviceVersion = `${data[0]}.${data[1]}`;
           this.log(`Firmware ${this.deviceVersion}, protocolo ${data[2]}.${data[3]}`);
-          this.sessionKey = md5(concat(this.localKey, data.slice(6, 12)));
+          this.bound = data[5] !== 0;
+          this.srand = data.slice(6, 12);
+          this.sessionKey = md5(concat(this.sessionSeed || this.localKey, this.srand));
           break;
         }
         case CODE.PAIR:

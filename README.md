@@ -6,6 +6,7 @@ App web para controlar una ampolleta Tuya/Smart Life por Bluetooth, sin la app o
 - `index.html`: interfaz (encender/apagar, blanco/color, brillo, temperatura, color, DP manual y log).
 - `tuya-ble.js`: protocolo Tuya BLE v3 (handshake, cifrado AES-CBC, CRC, fragmentación, datapoints).
 - `test/protocolo.test.js`: prueba contra una ampolleta simulada (`node test/protocolo.test.js "$PWD/tuya-ble.js"`).
+- `test/vinculacion.test.js`: prueba la vinculación de una ampolleta sin vincular (`node test/vinculacion.test.js "$PWD/tuya-ble.js"`).
 
 ## Credenciales
 Carga en la app el `devices.json` que genera `python -m tinytuya wizard` (o pega su contenido). La app toma de ahí
@@ -21,6 +22,14 @@ Web Bluetooth exige HTTPS o `localhost` y funciona en Chrome/Edge (Android, Wind
 - **Android:** súbela a GitHub Pages (o cualquier hosting HTTPS) y ábrela en Chrome.
 
 Cierra Smart Life antes de conectar: la ampolleta acepta una sola conexión Bluetooth a la vez.
+
+## Vinculación
+Si la ampolleta está sin vincular (por ejemplo, después de un reinicio), la app la vincula sola con la `local_key`
+del devices.json, igual que lo haría Smart Life, así que no hace falta abrir Smart Life antes. Cómo funciona,
+según el SDK BLE de Tuya: sin vincular, la ampolleta tiene la clave de login en ceros; la app le pide la información
+con esa clave y luego le envía el PAIR con uuid + local_key[:6] + device_id, que la ampolleta guarda.
+
+En Windows, Chrome suele cortar la conexión con estas ampolletas apenas conecta; en Android funciona.
 
 ## Datapoints de tus ampolletas (TR-BB-01)
 1 encendido (bool) · 2 modo (enum: 0 blanco, 1 color, 2 escena, 3 música) · 3 brillo (10–1000) · 4 temperatura (0–1000) ·

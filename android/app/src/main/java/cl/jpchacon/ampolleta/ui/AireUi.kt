@@ -2,6 +2,8 @@
 
 package cl.jpchacon.ampolleta.ui
 
+import android.content.Intent
+import android.provider.Settings
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -57,6 +59,10 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.input.PasswordVisualTransformation
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -65,6 +71,7 @@ import cl.jpchacon.ampolleta.ac.AcMode
 import cl.jpchacon.ampolleta.ac.AcState
 import cl.jpchacon.ampolleta.ac.AcStatus
 import cl.jpchacon.ampolleta.ac.AcUi
+import cl.jpchacon.ampolleta.ac.Broadlink
 import cl.jpchacon.ampolleta.ac.FanSpeed
 import cl.jpchacon.ampolleta.ac.FoundDevice
 import cl.jpchacon.ampolleta.ac.HVAC_DEVTYPE
@@ -129,7 +136,7 @@ fun AcCard(a: AcUi, manager: AcManager, onOpen: () -> Unit) {
 // ---------- agregar ----------
 
 @Composable
-fun AddAcScreen(manager: AcManager, onDone: () -> Unit) {
+fun AddAcScreen(manager: AcManager, onDone: () -> Unit, onSetup: () -> Unit) {
     val acs by manager.acs.collectAsState()
     val scope = rememberCoroutineScope()
     var searching by remember { mutableStateOf(true) }
@@ -152,10 +159,15 @@ fun AddAcScreen(manager: AcManager, onDone: () -> Unit) {
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
             item {
-                Text(
-                    "El aire tiene que estar conectado a tu Wi-Fi desde AC Freedom, y el teléfono en ese mismo Wi-Fi.",
-                    style = MaterialTheme.typography.bodyMedium,
-                )
+                Column {
+                    Text(
+                        "Busco los aires conectados a tu Wi-Fi; el teléfono tiene que estar en ese mismo Wi-Fi. " +
+                            "Si el aire todavía no está en tu Wi-Fi, o aparece bloqueado por AC Freedom, vincúlalo primero.",
+                        style = MaterialTheme.typography.bodyMedium,
+                    )
+                    Spacer(Modifier.height(8.dp))
+                    OutlinedButton(onClick = onSetup) { Text("Configurar Wi-Fi de un aire") }
+                }
             }
             error?.let { item { Text(it, color = MaterialTheme.colorScheme.error) } }
             if (searching) {
@@ -205,6 +217,93 @@ fun AddAcScreen(manager: AcManager, onDone: () -> Unit) {
                             }) { Text("Agregar") }
                         }
                     }
+                }
+            }
+        }
+    }
+}
+
+// ---------- vincular al Wi-Fi sin AC Freedom ----------
+
+private val SECURITIES = listOf(
+    Broadlink.WifiSecurity.WPA2 to "WPA2",
+    Broadlink.WifiSecurity.WPA_WPA2 to "WPA/WPA2",
+    Broadlink.WifiSecurity.WPA to "WPA",
+    Broadlink.WifiSecurity.NONE to "Sin clave",
+)
+
+@Composable
+fun SetupAcScreen(manager: AcManager, onBack: () -> Unit, onSearch: () -> Unit) {
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+    var ssid by remember { mutableStateOf("") }
+    var password by remember { mutableStateOf("") }
+    var security by remember { mutableStateOf(Broadlink.WifiSecurity.WPA2) }
+    var busy by remember { mutableStateOf(false) }
+    var result by remember { mutableStateOf<Result<Unit>?>(null) }
+
+    Scaffold(topBar = { BackBar("Configurar Wi-Fi del aire", onBack) }) { padding ->
+        Column(
+            Modifier.fillMaxSize().padding(padding).verticalScroll(rememberScrollState()).padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            Text("Así el aire queda en tu Wi-Fi sin pasar por AC Freedom, y sin bloqueo.", style = MaterialTheme.typography.bodyMedium)
+            Text(
+                "1. Pon el aire en modo vinculación: con el control, presiona 8 veces el botón \"Health\" hasta que pite " +
+                    "(si tu manual indica otro botón, usa ese).\n" +
+                    "2. En los ajustes de Wi-Fi del teléfono debería aparecer una red nueva del aire. Si no aparece, repite el paso 1: " +
+                    "en muchos módulos la segunda vez pasa al modo que crea esa red.\n" +
+                    "3. Conéctate a esa red. No tiene internet: si Android pregunta, elige mantener la conexión.\n" +
+                    "4. Vuelve aquí, escribe tu Wi-Fi de casa (tiene que ser de 2,4 GHz) y toca \"Enviar al aire\".\n" +
+                    "5. Vuelve a conectar el teléfono a tu Wi-Fi de casa y busca el aire.",
+                style = MaterialTheme.typography.bodyMedium,
+            )
+            OutlinedButton(onClick = { context.startActivity(Intent(Settings.ACTION_WIFI_SETTINGS)) }) { Text("Abrir ajustes de Wi-Fi") }
+
+            OutlinedTextField(
+                value = ssid, onValueChange = { ssid = it }, singleLine = true,
+                label = { Text("Nombre de tu Wi-Fi") }, modifier = Modifier.fillMaxWidth(),
+            )
+            if (security != Broadlink.WifiSecurity.NONE) {
+                OutlinedTextField(
+                    value = password, onValueChange = { password = it }, singleLine = true,
+                    label = { Text("Clave") }, modifier = Modifier.fillMaxWidth(),
+                    visualTransformation = PasswordVisualTransformation(),
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
+                )
+            }
+            SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth()) {
+                SECURITIES.forEachIndexed { i, (sec, label) ->
+                    SegmentedButton(
+                        selected = security == sec,
+                        onClick = { security = sec },
+                        shape = SegmentedButtonDefaults.itemShape(i, SECURITIES.size),
+                    ) { Text(label, maxLines = 1) }
+                }
+            }
+
+            Button(
+                enabled = !busy && ssid.isNotBlank(),
+                onClick = {
+                    busy = true
+                    result = null
+                    scope.launch {
+                        result = manager.provision(ssid.trim(), if (security == Broadlink.WifiSecurity.NONE) "" else password, security)
+                        busy = false
+                    }
+                },
+                modifier = Modifier.fillMaxWidth(),
+            ) { Text(if (busy) "Enviando…" else "Enviar al aire") }
+
+            result?.let { r ->
+                if (r.isSuccess) {
+                    Text(
+                        "Listo, se lo envié. El aire se reinicia y se conecta a \"$ssid\" en menos de un minuto. " +
+                            "Ahora vuelve a conectar el teléfono a ese Wi-Fi y busca el aire.",
+                    )
+                    Button(onClick = onSearch, modifier = Modifier.fillMaxWidth()) { Text("Buscar aires") }
+                } else {
+                    Text("No se pudo enviar: ${r.exceptionOrNull()?.message}", color = MaterialTheme.colorScheme.error)
                 }
             }
         }

@@ -86,6 +86,7 @@ private sealed interface Screen {
     data object Log : Screen
     data class Control(val mac: String?) : Screen // null = todas
     data object AddAc : Screen
+    data object SetupAc : Screen
     data class Ac(val mac: String) : Screen
 }
 
@@ -111,7 +112,8 @@ fun AmpolletaUi(manager: BulbManager, acManager: AcManager) {
                 onLog = { screen = Screen.Log },
             )
             Screen.Add -> AddScreen(manager, onDone = { screen = Screen.Home })
-            Screen.AddAc -> AddAcScreen(acManager, onDone = { screen = Screen.Home })
+            Screen.AddAc -> AddAcScreen(acManager, onDone = { screen = Screen.Home }, onSetup = { screen = Screen.SetupAc })
+            Screen.SetupAc -> SetupAcScreen(acManager, onBack = { screen = Screen.AddAc }, onSearch = { screen = Screen.AddAc })
             is Screen.Ac -> AcScreen(acManager, s.mac, onBack = { screen = Screen.Home })
             Screen.Log -> LogScreen(manager, onBack = { screen = Screen.Home })
             is Screen.Control -> ControlScreen(manager, s.mac, onBack = { screen = Screen.Home })

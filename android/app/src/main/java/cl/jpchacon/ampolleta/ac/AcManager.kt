@@ -1,6 +1,9 @@
 package cl.jpchacon.ampolleta.ac
 
 import android.content.Context
+import android.net.ConnectivityManager
+import android.net.Network
+import android.net.NetworkCapabilities
 import android.net.wifi.WifiManager
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -264,6 +267,61 @@ class AcManager(private val context: Context, private val log: (String) -> Unit)
             _acs.update { it - a.mac }
             sessions.remove(a.mac)?.changes?.close()
             log("${a.name}: ${e.message}")
+            if (d.locked) {
+                Result.failure(Exception("${e.message}. El aire está bloqueado por AC Freedom: vincúlalo de nuevo con \"Configurar Wi-Fi de un aire\"."))
+            } else {
+                Result.failure(e)
+            }
+        }
+    }
+
+    /**
+     * El Wi-Fi conectado, aunque no tenga internet. Así los paquetes no se van por los datos móviles
+     * cuando el teléfono está conectado a la red propia del aire.
+     */
+    private fun wifiNetwork(): Network? {
+        val cm = context.getSystemService(ConnectivityManager::class.java) ?: return null
+        @Suppress("DEPRECATION")
+        return cm.allNetworks.firstOrNull { cm.getNetworkCapabilities(it)?.hasTransport(NetworkCapabilities.TRANSPORT_WIFI) == true }
+    }
+
+    /**
+     * Configura el Wi-Fi de un aire en modo AP. El teléfono tiene que estar conectado a la red que crea
+     * el aire. Se envía varias veces porque es UDP y el aire no responde.
+     */
+    suspend fun provision(ssid: String, password: String, security: Broadlink.WifiSecurity): Result<Unit> = withContext(Dispatchers.IO) {
+        try {
+            val packet = Broadlink.setupPacket(ssid, password, security)
+            val targets = broadcastAddresses().toMutableList()
+            try {
+                @Suppress("DEPRECATION")
+                val gw = context.applicationContext.getSystemService(WifiManager::class.java)?.dhcpInfo?.gateway ?: 0
+                // En modo AP el aire suele ser la puerta de enlace de su propia red.
+                if (gw != 0) targets += InetAddress.getByAddress(ByteArray(4) { (gw shr (8 * it)).toByte() })
+            } catch (e: Exception) {
+                // Queda el broadcast.
+            }
+            val socket = DatagramSocket()
+            try {
+                wifiNetwork()?.bindSocket(socket) ?: log("No encontré el Wi-Fi conectado; envío igual")
+                socket.broadcast = true
+                repeat(3) {
+                    for (addr in targets) {
+                        try {
+                            socket.send(DatagramPacket(packet, packet.size, addr, Broadlink.PORT))
+                        } catch (e: Exception) {
+                            log("No se pudo enviar a $addr: ${e.message}")
+                        }
+                    }
+                    delay(500)
+                }
+            } finally {
+                socket.close()
+            }
+            log("Wi-Fi \"$ssid\" enviado al aire (${targets.joinToString { it.hostAddress ?: "?" }})")
+            Result.success(Unit)
+        } catch (e: Exception) {
+            log("No se pudo configurar el Wi-Fi del aire: ${e.message}")
             Result.failure(e)
         }
     }

@@ -7,6 +7,7 @@
     <!-- Aires con módulo Wi-Fi Broadlink (AC Freedom): UDP en la red local -->
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.ACCESS_WIFI_STATE" />
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
 
     <!-- Android 12 o superior -->
     <uses-permission
